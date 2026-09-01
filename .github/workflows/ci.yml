@@ -1,0 +1,51 @@
+name: LMCYS CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: |
+          backend/package.json
+          frontend/package.json
+
+    # Backend Pipeline
+    - name: Install Backend Dependencies
+      run: |
+        cd backend
+        npm ci
+
+    - name: Compile Backend TypeScript
+      run: |
+        cd backend
+        npm run build
+
+    # Frontend Pipeline
+    - name: Install Frontend Dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Build Frontend Application
+      run: |
+        cd frontend
+        npm run build
+
+    # Containerization
+    - name: Validate Docker Compose Configuration
+      run: |
+        docker compose config
