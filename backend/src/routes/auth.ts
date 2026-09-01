@@ -79,7 +79,7 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
   const existingDbUser = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   
   if (existingCadet || existingDbUser) {
-    return res.status(409).json({ error: 'This email is already registered in the Academy.' });
+    return res.status(409).json({ error: 'This email is already registered. Please login instead.' });
   }
 
   try {
@@ -125,10 +125,10 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
       filename
     );
 
-    // Initialize level 1 progress record
+    // Initialize Level 1 Progress
     db.prepare(`
-      INSERT INTO user_progress (id, user_id, current_level, highest_unlocked_level, total_score)
-      VALUES (?, ?, 1, 1, 0)
+      INSERT INTO user_progress (id, user_id, level_id, status, highest_score)
+      VALUES (?, ?, 1, 'current', 0.0)
     `).run('prog-' + Math.random().toString(36).substring(2, 9), userId);
 
     logAudit(userId, 'CADET_REGISTERED', `file:${filename}`, req.ip, req.headers['user-agent']);
@@ -167,7 +167,7 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
     });
   } catch (err: any) {
     if (err.message === 'EMAIL_EXISTS') {
-      return res.status(409).json({ error: 'This email is already registered in the Academy.' });
+      return res.status(409).json({ error: 'This email is already registered. Please login instead.' });
     }
     console.error('Cadet registration error:', err);
     return res.status(500).json({ error: 'Failed to process cadet registration. Please try again.' });

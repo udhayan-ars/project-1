@@ -91,7 +91,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       login(data.token, data.user);
       onSuccess(data.user.mindset_completed === 0);
     } catch (err: any) {
-      setError('⚠️ Something went wrong. Please try again.');
+      setError('⚠️ Network connection error. Please verify the Academy server is running.');
       playFailure();
     } finally {
       setLoading(false);
@@ -136,8 +136,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     // 5. Validate other required fields
-    if (!referredBy.trim() || !studying.trim() || !academicYear.trim() || !collegeName.trim()) {
-      setError('⚠️ Please fill in all required fields.');
+    if (!referredBy.trim()) {
+      setError('⚠️ Who Referred You field is required.');
+      playFailure();
+      return;
+    }
+
+    if (!studying.trim()) {
+      setError('⚠️ What are you studying field is required.');
+      playFailure();
+      return;
+    }
+
+    if (!academicYear.trim()) {
+      setError('⚠️ Current Academic Year field is required.');
+      playFailure();
+      return;
+    }
+
+    if (!collegeName.trim()) {
+      setError('⚠️ College Name field is required.');
       playFailure();
       return;
     }
@@ -162,7 +180,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || '❌ Registration failed. Please try again.');
+        if (res.status === 409 || (data.error && data.error.includes('already registered'))) {
+          setError('This email is already registered. Please login instead.');
+        } else {
+          setError(data.error || '❌ Registration failed. Please check your information and try again.');
+        }
         playFailure();
         setLoading(false);
         return;
@@ -172,7 +194,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       login(data.token, data.user);
       onSuccess(true);
     } catch (err: any) {
-      setError('⚠️ Something went wrong. Please try again.');
+      setError('⚠️ Network connection error. Please verify the Academy server is running.');
       playFailure();
     } finally {
       setLoading(false);

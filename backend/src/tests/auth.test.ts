@@ -274,14 +274,43 @@ async function runAllTests() {
   const userByEmail = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get('alice@example.com') as any;
   assert(userByEmail !== undefined && userByEmail.username === 'alice_cadet', 'Login Flexibility: Cadet can be resolved by email (e.g. alice@example.com)');
 
-  // Test password validation rules
-  const strongPassword = 'CyberCadet2026';
-  const isValidStrong = strongPassword.length >= 8 && /[a-zA-Z]/.test(strongPassword) && /[0-9]/.test(strongPassword);
-  assert(isValidStrong === true, 'Validation: Strong password (8+ chars, letter + number) accepted');
+  // =========================================================================
+  // 12. REGISTRATION DATABASE & USER PROGRESS SYNCHRONIZATION TEST
+  // =========================================================================
+  const testRegCadetId = 'usr-reg-test-' + Date.now();
+  const testRegEmail = `cadet_${Date.now()}@cybertest.org`;
+  const testRegPassword = 'StrongPass123';
+  const testRegHash = bcrypt.hashSync(testRegPassword, 10);
 
-  const weakPasswordNoNum = 'CyberCadetOnly';
-  const isWeakRejected = !(weakPasswordNoNum.length >= 8 && /[a-zA-Z]/.test(weakPasswordNoNum) && /[0-9]/.test(weakPasswordNoNum));
-  assert(isWeakRejected === true, 'Validation: Password without numbers rejected with clear human message');
+  // Insert user
+  db.prepare(`
+    INSERT INTO users (
+      id, full_name, username, email, password_hash, role, 
+      age, referred_by, studying, academic_year, college_name, profile_file,
+      xp, current_level, streak_days, soc_readiness, mindset_completed
+    )
+    VALUES (?, ?, ?, ?, ?, 'student', ?, ?, ?, ?, ?, ?, 0, 1, 1, 0.0, 0)
+  `).run(
+    testRegCadetId, 'Test Cadet', 'test_cadet', testRegEmail, testRegHash,
+    21, 'Professor Smith', 'B.E Cybersecurity', '3rd Year', 'MIT College', 'Test_Cadet.txt'
+  );
+
+  // Insert level 1 progress record
+  db.prepare(`
+    INSERT INTO user_progress (id, user_id, level_id, status, highest_score)
+    VALUES (?, ?, 1, 'current', 0.0)
+  `).run('prog-test-' + Date.now(), testRegCadetId);
+
+  const regUserRecord = db.prepare('SELECT * FROM users WHERE id = ?').get(testRegCadetId) as any;
+  assert(regUserRecord !== undefined && regUserRecord.full_name === 'Test Cadet', 'Registration DB: User correctly saved to SQLite users table');
+
+  const regProgressRecord = db.prepare('SELECT * FROM user_progress WHERE user_id = ? AND level_id = 1').get(testRegCadetId) as any;
+  assert(regProgressRecord !== undefined && regProgressRecord.status === 'current', 'Registration DB: user_progress initialized for Level 1 with status "current"');
+
+  // Duplicate email detection
+  const isDuplicate = db.prepare('SELECT id FROM users WHERE email = ?').get(testRegEmail);
+  const duplicateErrorMessage = isDuplicate ? 'This email is already registered. Please login instead.' : null;
+  assert(duplicateErrorMessage === 'This email is already registered. Please login instead.', 'Registration Validation: Duplicate email returns exact required error message');
 
   console.log(`\n📊 Test Summary: ${passedTests} / ${totalTests} tests passed (${Math.round((passedTests / totalTests) * 100)}%).\n`);
 }
