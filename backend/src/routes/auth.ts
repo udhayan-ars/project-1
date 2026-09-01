@@ -24,6 +24,18 @@ function getJwtSecret(): string {
 // Email format regex validation
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Collision-safe username generation helper
+export function generateUniqueUsername(email: string): string {
+  const base = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+  let candidate = base;
+  let counter = 1;
+  while (db.prepare('SELECT id FROM users WHERE LOWER(username) = ?').get(candidate)) {
+    counter++;
+    candidate = `${base}_${counter}`;
+  }
+  return candidate;
+}
+
 // POST /api/auth/register - Join Academy
 router.post('/register', authLimiter, async (req, res): Promise<any> => {
   const { 
@@ -102,7 +114,7 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
 
     // 5. Synchronize with SQLite database for level progression, XP and relational queries
     const userId = 'usr-' + Math.random().toString(36).substring(2, 9) + Date.now();
-    const username = normalizedEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
+    const username = generateUniqueUsername(normalizedEmail);
 
     db.prepare(`
       INSERT INTO users (
@@ -210,9 +222,7 @@ router.post('/login', authLimiter, (req, res): any => {
   let user = dbUser;
   if (!user && cadetFromFile) {
     const userId = 'usr-' + Math.random().toString(36).substring(2, 9) + Date.now();
-    const username = normalizedIdent.includes('@') 
-      ? normalizedIdent.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_')
-      : normalizedIdent;
+    const username = generateUniqueUsername(cadetFromFile.email);
 
     db.prepare(`
       INSERT INTO users (

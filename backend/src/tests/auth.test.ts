@@ -12,6 +12,8 @@ import {
   parseCadetFile,
   CadetProfile 
 } from '../services/fileDatabaseService.js';
+import { generateUniqueUsername } from '../routes/auth.js';
+import { checkAssessmentCooldown } from '../routes/assessments.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -312,6 +314,78 @@ async function runAllTests() {
   const isDuplicate = db.prepare('SELECT id FROM users WHERE email = ?').get(testRegEmail);
   const duplicateErrorMessage = isDuplicate ? 'This email is already registered. Please login instead.' : null;
   assert(duplicateErrorMessage === 'This email is already registered. Please login instead.', 'Registration Validation: Duplicate email returns exact required error message');
+
+  // =========================================================================
+  // 13. USERNAME COLLISION DISAMBIGUATION TEST
+  // =========================================================================
+  // 13. USERNAME COLLISION DISAMBIGUATION TEST
+  // =========================================================================
+  const baseLocal = 'col_test_' + Date.now();
+  const sharedLocalPartEmail1 = `${baseLocal}@gmail.com`;
+  const sharedLocalPartEmail2 = `${baseLocal}@university.edu`;
+  const sharedLocalPartEmail3 = `${baseLocal}@corporate.com`;
+
+  const user1 = generateUniqueUsername(sharedLocalPartEmail1);
+  db.prepare(`
+    INSERT INTO users (id, full_name, username, email, password_hash, role)
+    VALUES (?, 'Collision Cadet 1', ?, ?, 'hash1', 'student')
+  `).run('usr-col-1-' + Date.now(), user1, sharedLocalPartEmail1);
+
+  const user2 = generateUniqueUsername(sharedLocalPartEmail2);
+  db.prepare(`
+    INSERT INTO users (id, full_name, username, email, password_hash, role)
+    VALUES (?, 'Collision Cadet 2', ?, ?, 'hash2', 'student')
+  `).run('usr-col-2-' + Date.now(), user2, sharedLocalPartEmail2);
+
+  const user3 = generateUniqueUsername(sharedLocalPartEmail3);
+  db.prepare(`
+    INSERT INTO users (id, full_name, username, email, password_hash, role)
+    VALUES (?, 'Collision Cadet 3', ?, ?, 'hash3', 'student')
+  `).run('usr-col-3-' + Date.now(), user3, sharedLocalPartEmail3);
+
+  assert(user1 === baseLocal, `Username Collision: First user receives base username (${baseLocal})`);
+  assert(user2 === `${baseLocal}_2`, `Username Collision: Second user receives auto-disambiguated username (${baseLocal}_2)`);
+  assert(user3 === `${baseLocal}_3`, `Username Collision: Third user receives auto-disambiguated username (${baseLocal}_3)`);
+  // =========================================================================
+  // 14. 7-DAY ASSESSMENT RETRY COOLDOWN TEST SUITE
+  // =========================================================================
+  const cooldownCadetId = 'usr-cd-test-' + Date.now();
+  const testLevelId = 5;
+
+  // Insert user for foreign key constraint
+  db.prepare(`
+    INSERT INTO users (id, full_name, username, email, password_hash, role)
+    VALUES (?, 'Cooldown Cadet', ?, ?, 'hash_cd', 'student')
+  `).run(cooldownCadetId, 'cd_cadet_' + Date.now(), `cd_${Date.now()}@test.org`);
+
+  // Ensure assessment exists for foreign key constraint
+  db.prepare(`
+    INSERT OR IGNORE INTO assessments (id, level_id, passing_score, time_limit_seconds)
+    VALUES (?, ?, 95, 600)
+  `).run(`asm-${testLevelId}`, testLevelId);
+
+  // Record a failed attempt (e.g. 70% score < 95% pass threshold) completed right now
+  const failedAttemptId = 'att-fail-' + Date.now();
+  db.prepare(`
+    INSERT INTO assessment_attempts (id, user_id, assessment_id, score, passed, tab_violations_count, started_at, completed_at)
+    VALUES (?, ?, ?, 70.0, 0, 0, datetime('now', '-5 minutes'), CURRENT_TIMESTAMP)
+  `).run(failedAttemptId, cooldownCadetId, `asm-${testLevelId}`);
+
+  // Test 1: Immediate retry check -> must be in cooldown
+  const immediateCooldownCheck = checkAssessmentCooldown(cooldownCadetId, testLevelId);
+  assert(immediateCooldownCheck.inCooldown === true, 'Cooldown Enforcement: Recent failure (<95%) triggers active 7-day cooldown');
+  assert(typeof immediateCooldownCheck.retryAllowedAt === 'string', 'Cooldown Enforcement: retryAllowedAt ISO timestamp is returned');
+  assert(immediateCooldownCheck.lastScore === 70.0, 'Cooldown Enforcement: Last failed score (70%) is returned');
+
+  // Test 2: Fast-forward 8 days in the past -> cooldown expired and retries permitted
+  db.prepare(`
+    UPDATE assessment_attempts 
+    SET completed_at = datetime('now', '-8 days'), started_at = datetime('now', '-8 days')
+    WHERE id = ?
+  `).run(failedAttemptId);
+
+  const expiredCooldownCheck = checkAssessmentCooldown(cooldownCadetId, testLevelId);
+  assert(expiredCooldownCheck.inCooldown === false, 'Cooldown Enforcement: After 7-day cooldown expires, assessment retake is permitted');
 
   console.log(`\n📊 Test Summary: ${passedTests} / ${totalTests} tests passed (${Math.round((passedTests / totalTests) * 100)}%).\n`);
 }

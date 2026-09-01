@@ -5,9 +5,58 @@ import { updateWeakTopics, checkAndAwardBadges } from '../services/evaluationSer
 
 const router = Router();
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+/**
+ * Checks if a user is currently under a 7-day cooldown after failing an assessment
+ */
+export function checkAssessmentCooldown(userId: string, levelId: number): {
+  inCooldown: boolean;
+  retryAllowedAt?: string;
+  remainingMs?: number;
+  lastScore?: number;
+  completedAt?: string;
+} {
+  const assessmentId = `asm-${levelId}`;
+  
+  // Find the most recent attempt for this level
+  const lastAttempt = db.prepare(`
+    SELECT * FROM assessment_attempts 
+    WHERE user_id = ? AND (assessment_id = ? OR assessment_id = ?)
+    ORDER BY datetime(COALESCE(completed_at, started_at)) DESC 
+    LIMIT 1
+  `).get(userId, assessmentId, `level-${levelId}`) as any;
+
+  // If no attempt or the last attempt passed with >= 95%, no cooldown
+  if (!lastAttempt || lastAttempt.passed === 1 || lastAttempt.score >= 95) {
+    return { inCooldown: false };
+  }
+
+  const attemptTimeStr = lastAttempt.completed_at || lastAttempt.started_at;
+  const parsedDate = new Date(attemptTimeStr.endsWith('Z') ? attemptTimeStr : attemptTimeStr + 'Z');
+  const attemptTime = parsedDate.getTime();
+  const now = Date.now();
+  const cooldownEndsTime = attemptTime + SEVEN_DAYS_MS;
+
+  if (now < cooldownEndsTime) {
+    return {
+      inCooldown: true,
+      retryAllowedAt: new Date(cooldownEndsTime).toISOString(),
+      remainingMs: cooldownEndsTime - now,
+      lastScore: lastAttempt.score,
+      completedAt: attemptTimeStr
+    };
+  }
+
+  return { inCooldown: false };
+}
+
 // GET /api/assessments/:levelId
 router.get('/:levelId', authenticateToken, (req: AuthRequest, res): any => {
   const levelId = parseInt(req.params.levelId as string, 10);
+  const userId = req.user?.id;
+
+  const cooldown = userId ? checkAssessmentCooldown(userId, levelId) : { inCooldown: false };
 
   const questions = db.prepare('SELECT id, level_id, type, question_text, points, topic_tag FROM questions WHERE level_id = ?').all(levelId) as any[];
 
@@ -17,9 +66,10 @@ router.get('/:levelId', authenticateToken, (req: AuthRequest, res): any => {
       assessment: {
         id: `asm-${levelId}`,
         level_id: levelId,
-        passing_score: 70,
+        passing_score: 95,
         time_limit_seconds: 600
       },
+      cooldown,
       questions: [
         {
           id: `q-${levelId}-1`,
@@ -62,11 +112,11 @@ router.get('/:levelId', authenticateToken, (req: AuthRequest, res): any => {
   const assessment = db.prepare('SELECT * FROM assessments WHERE level_id = ?').get(levelId) || {
     id: `asm-${levelId}`,
     level_id: levelId,
-    passing_score: 70,
+    passing_score: 95,
     time_limit_seconds: 600
   };
 
-  return res.json({ assessment, questions: questionsWithOptions });
+  return res.json({ assessment, questions: questionsWithOptions, cooldown });
 });
 
 // POST /api/assessments/:levelId/submit
@@ -77,6 +127,19 @@ router.post('/:levelId/submit', authenticateToken, (req: AuthRequest, res): any 
 
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // 1. Enforce Server-Side 7-Day Cooldown on Failed Retries
+  const cooldown = checkAssessmentCooldown(userId, levelId);
+  if (cooldown.inCooldown) {
+    return res.status(403).json({
+      error: 'Assessment locked due to recent failure (Score < 95%). A 7-day cooldown is in effect.',
+      cooldown_active: true,
+      retry_allowed_at: cooldown.retryAllowedAt,
+      remaining_ms: cooldown.remainingMs,
+      last_score: cooldown.lastScore,
+      message: `You can retry this assessment on ${new Date(cooldown.retryAllowedAt!).toLocaleString()}`
+    });
   }
 
   let totalPoints = 0;
