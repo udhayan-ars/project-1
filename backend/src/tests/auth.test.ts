@@ -279,6 +279,7 @@ async function runAllTests() {
   // =========================================================================
   const testRegCadetId = 'usr-reg-test-' + Date.now();
   const testRegEmail = `cadet_${Date.now()}@cybertest.org`;
+  const testRegUsername = `test_cadet_${Date.now()}`;
   const testRegPassword = 'StrongPass123';
   const testRegHash = bcrypt.hashSync(testRegPassword, 10);
 
@@ -291,7 +292,7 @@ async function runAllTests() {
     )
     VALUES (?, ?, ?, ?, ?, 'student', ?, ?, ?, ?, ?, ?, 0, 1, 1, 0.0, 0)
   `).run(
-    testRegCadetId, 'Test Cadet', 'test_cadet', testRegEmail, testRegHash,
+    testRegCadetId, 'Test Cadet', testRegUsername, testRegEmail, testRegHash,
     21, 'Professor Smith', 'B.E Cybersecurity', '3rd Year', 'MIT College', 'Test_Cadet.txt'
   );
 
