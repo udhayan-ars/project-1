@@ -12,6 +12,7 @@ import {
   SOCReport13Section, 
   AnalystNote 
 } from '../types/soc';
+import { getScaledSOCEvents } from './socEventBatch1';
 
 // ==========================================
 // 1. REALISTIC SOC SECURITY EVENTS TELEMETRY
@@ -310,7 +311,8 @@ export const INITIAL_EVENTS: SOCEvent[] = [
     message: 'Windows Update Agent checked in with Microsoft CDN; 0 security patches pending',
     bytes: 12400,
     action: 'ALLOW'
-  }
+  },
+  ...getScaledSOCEvents()
 ];
 
 // ==========================================

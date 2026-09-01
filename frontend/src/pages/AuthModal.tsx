@@ -10,7 +10,7 @@ import {
   Building2, 
   Calendar, 
   UserCheck, 
-  Sparkles,
+  RotateCw,
   BookOpen
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -46,6 +46,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [collegeName, setCollegeName] = useState('');
 
   const [error, setError] = useState<string | null>(null);
+  const [isNetworkError, setIsNetworkError] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const { login } = useAuth();
@@ -53,9 +54,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLoginSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
+    setIsNetworkError(false);
     playClick();
 
     const trimmedIdent = loginIdentifier.trim();
@@ -66,10 +68,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           identifier: trimmedIdent,
           email: trimmedIdent,
@@ -78,9 +84,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      clearTimeout(timeoutId);
+
+      let data: any;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        setIsNetworkError(false);
+        setError('Received invalid response from Academy server. Please try again.');
+        playFailure();
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
+        setIsNetworkError(false);
         setError(data.error || '❌ Incorrect username or password.');
         playFailure();
         setLoading(false);
@@ -91,16 +109,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       login(data.token, data.user);
       onSuccess(data.user.mindset_completed === 0);
     } catch (err: any) {
-      setError('⚠️ Network connection error. Please verify the Academy server is running.');
+      clearTimeout(timeoutId);
+      setIsNetworkError(true);
+      if (err.name === 'AbortError') {
+        setError("Request timed out. Can't reach the Academy server. Please try again.");
+      } else {
+        setError("Can't reach the Academy server. Check your connection and try again.");
+      }
       playFailure();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRegisterSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
+    setIsNetworkError(false);
     playClick();
 
     // 1. Validate Full Name
@@ -161,10 +186,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           full_name: trimmedFullName,
           email: normalizedEmail,
@@ -177,9 +206,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      clearTimeout(timeoutId);
+
+      let data: any;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        setIsNetworkError(false);
+        setError('Received invalid response from Academy server. Please try again.');
+        playFailure();
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
+        setIsNetworkError(false);
         if (res.status === 409 || (data.error && data.error.includes('already registered'))) {
           setError('This email is already registered. Please login instead.');
         } else {
@@ -194,10 +235,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       login(data.token, data.user);
       onSuccess(true);
     } catch (err: any) {
-      setError('⚠️ Network connection error. Please verify the Academy server is running.');
+      clearTimeout(timeoutId);
+      setIsNetworkError(true);
+      if (err.name === 'AbortError') {
+        setError("Request timed out. Can't reach the Academy server. Please try again.");
+      } else {
+        setError("Can't reach the Academy server. Check your connection and try again.");
+      }
       playFailure();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (mode === 'login') {
+      handleLoginSubmit();
+    } else {
+      handleRegisterSubmit();
     }
   };
 
@@ -230,9 +285,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-5 p-3 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 font-mono text-xs flex items-center gap-2 animate-fadeIn">
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-            <span>{error}</span>
+          <div className="mb-5 p-3 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 font-mono text-xs flex items-center justify-between gap-2 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <span>{error}</span>
+            </div>
+            {isNetworkError && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={loading}
+                className="px-2.5 py-1 bg-red-800/60 hover:bg-red-700/80 text-white rounded border border-red-400/50 flex items-center gap-1 text-[11px] font-bold tracking-wider shrink-0 transition-colors"
+              >
+                <RotateCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                <span>Retry</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -240,7 +308,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="flex rounded-lg bg-slate-950 p-1 mb-5 border border-slate-800 font-mono text-xs">
           <button
             type="button"
-            onClick={() => { playClick(); setMode('login'); setError(null); }}
+            onClick={() => { playClick(); setMode('login'); setError(null); setIsNetworkError(false); }}
             className={`flex-1 py-1.5 rounded-md font-bold transition-all ${
               mode === 'login' 
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(0,243,255,0.2)]' 
@@ -251,7 +319,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => { playClick(); setMode('register'); setError(null); }}
+            onClick={() => { playClick(); setMode('register'); setError(null); setIsNetworkError(false); }}
             className={`flex-1 py-1.5 rounded-md font-bold transition-all ${
               mode === 'register' 
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(0,243,255,0.2)]' 

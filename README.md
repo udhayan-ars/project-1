@@ -78,6 +78,38 @@ npm run dev
 
 ## 🐳 Docker Deployment (One-Command)
 
+## ⚙️ Development Setup & Port Alignment
+
+### Standard Port Configuration
+- **Backend API Server**: Port `5001` (`PORT=5001` in `backend/.env`)
+- **Frontend Dev Server**: Port `5173` (`http://localhost:5173`)
+- **Vite Proxy**: Dynamically proxies all `/api/*` requests from `5173` to `5001` (reads `PORT` / `VITE_API_PORT` / `BACKEND_PORT` / `VITE_API_URL`).
+
+> **Note on Port Alignment**: The backend defaults to port `5001` and Vite dynamically forwards `/api` requests to `http://localhost:5001`. To customize the backend port, set `PORT=<custom_port>` in `backend/.env` or `VITE_API_PORT=<custom_port>` in `frontend/.env`.
+
+### Quick Start (Local)
+
+1. **Start Backend**:
+   ```bash
+   cd backend
+   cp .env.example .env   # Uses PORT=5001 out-of-the-box
+   npm install
+   npm run dev
+   ```
+
+2. **Start Frontend**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+3. **Open Application**: Navigate to `http://localhost:5173`
+
+---
+
+## 🐳 Docker Deployment
+
 To spin up the entire production container stack:
 ```bash
 docker compose up --build

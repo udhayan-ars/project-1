@@ -74,6 +74,12 @@ export const LevelStudyPage: React.FC<LevelStudyPageProps> = ({
   const [isAssessmentSubmitting, setIsAssessmentSubmitting] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<any | null>(null);
   const [timeLeft, setTimeLeft] = useState(600);
+  const [cooldown, setCooldown] = useState<{
+    inCooldown: boolean;
+    retryAllowedAt?: string;
+    remainingMs?: number;
+    lastScore?: number;
+  } | null>(null);
 
   // Fetch Level Data
   useEffect(() => {
@@ -101,6 +107,9 @@ export const LevelStudyPage: React.FC<LevelStudyPageProps> = ({
           setAssessment(asmData.assessment);
           setQuestions(asmData.questions || []);
           setTimeLeft(asmData.assessment?.time_limit_seconds || 600);
+          if (asmData.cooldown) {
+            setCooldown(asmData.cooldown);
+          }
         }
       } catch (err) {
         console.error('Failed to load level details:', err);
@@ -356,6 +365,21 @@ Follow this structured decision-tree when handling related alerts:
       });
 
       const data = await res.json();
+
+      if (!res.ok) {
+        if (data.cooldown_active) {
+          setCooldown({
+            inCooldown: true,
+            retryAllowedAt: data.retry_allowed_at,
+            remainingMs: data.remaining_ms,
+            lastScore: data.last_score
+          });
+          playFailure();
+          setIsAssessmentSubmitting(false);
+          return;
+        }
+      }
+
       setAssessmentResult(data);
 
       if (data.passed) {
@@ -370,6 +394,16 @@ Follow this structured decision-tree when handling related alerts:
         }
       } else {
         playFailure();
+        // If failed, trigger cooldown for next view
+        if (data.score < 95) {
+          const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          setCooldown({
+            inCooldown: true,
+            retryAllowedAt: sevenDaysFromNow,
+            remainingMs: 7 * 24 * 60 * 60 * 1000,
+            lastScore: data.score
+          });
+        }
       }
     } catch (err) {
       console.error('Assessment submit failed:', err);
@@ -726,8 +760,45 @@ Follow this structured decision-tree when handling related alerts:
             )}
           </div>
 
-          {/* Assessment Form or Result Scorecard */}
-          {!assessmentResult ? (
+          {/* Assessment Form, Result Scorecard, or Cooldown Lockout */}
+          {cooldown?.inCooldown ? (
+            <div className="p-8 rounded-2xl bg-slate-950/90 border border-amber-500/40 text-center space-y-6 font-mono animate-fadeIn">
+              <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border bg-amber-950/60 border-amber-400 text-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.3)]">
+                <Clock className="w-8 h-8 animate-pulse" />
+              </div>
+              <div className="max-w-xl mx-auto space-y-2">
+                <span className="badge-neon-yellow text-xs font-bold">7-DAY OFFICIAL RETAKE COOLDOWN ACTIVE</span>
+                <h3 className="font-['Space_Grotesk'] text-2xl font-bold text-white">
+                  Level {levelId} Assessment Temporarily Locked
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Per SOC Academy examination integrity standards, assessments with an unpassed score (&lt;95%) enter a strict 7-day cooldown period. This guarantees adequate time to review weak concepts and master hands-on telemetry before the next official scored attempt.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto text-left">
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 block uppercase font-bold">LAST RECORDED SCORE</span>
+                  <span className="text-2xl font-extrabold text-red-400">{cooldown.lastScore ?? 0}% (Failed)</span>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 block uppercase font-bold">RETAKE UNLOCK DATE</span>
+                  <span className="text-xs font-bold text-cyan-300 block mt-1">
+                    {cooldown.retryAllowedAt ? new Date(cooldown.retryAllowedAt).toLocaleString() : 'In 7 Days'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-center gap-4">
+                <button
+                  onClick={() => { playClick(); setActiveTab('learn'); }}
+                  className="cyber-btn-primary py-2.5 px-6 text-xs uppercase"
+                >
+                  <span>Review Study Modules &amp; Weak Areas →</span>
+                </button>
+              </div>
+            </div>
+          ) : !assessmentResult ? (
             <div className="space-y-6">
               {questions.map((q, qIdx) => (
                 <div key={q.id || qIdx} className="p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3 font-mono text-xs">
