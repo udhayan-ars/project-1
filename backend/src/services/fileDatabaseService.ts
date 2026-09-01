@@ -20,11 +20,11 @@ export interface CadetProfile {
   name: string;
   email: string;
   passwordHash: string;
-  age: number;
-  referredBy: string;
-  studying: string;
-  academicYear: string;
-  college: string;
+  age?: number;
+  referredBy?: string;
+  studying?: string;
+  academicYear?: string;
+  college?: string;
   filename?: string;
 }
 
@@ -135,11 +135,11 @@ export function parseCadetFile(filePath: string): CadetProfile | null {
     name: data.name,
     email: data.email,
     passwordHash: data.passwordHash,
-    age: data.age || 0,
-    referredBy: data.referredBy || 'Direct Registration',
-    studying: data.studying || 'N/A',
-    academicYear: data.academicYear || 'N/A',
-    college: data.college || 'N/A',
+    age: (data.age && !isNaN(data.age)) ? data.age : 20,
+    referredBy: data.referredBy || 'Direct',
+    studying: data.studying || 'Cyber Security',
+    academicYear: data.academicYear || '3rd Year',
+    college: data.college || 'Cyber Defense Academy',
     filename: path.basename(filePath)
   };
 }
@@ -167,16 +167,23 @@ export async function saveCadetProfile(profile: CadetProfile): Promise<{ filenam
     const filename = getUniqueFilename(baseSanitized, normalizedEmail, indexMap);
     const filePath = path.join(DATABASE_DIR, filename);
 
+    // Apply consistent defaults so files are never written with blank or undefined values
+    const ageVal = (typeof profile.age === 'number' && !isNaN(profile.age) && profile.age >= 10 && profile.age <= 120) ? profile.age : 20;
+    const referredByVal = (profile.referredBy && profile.referredBy.trim()) ? profile.referredBy.trim() : 'Direct';
+    const studyingVal = (profile.studying && profile.studying.trim()) ? profile.studying.trim() : 'Cyber Security';
+    const academicYearVal = (profile.academicYear && profile.academicYear.trim()) ? profile.academicYear.trim() : '3rd Year';
+    const collegeVal = (profile.college && profile.college.trim()) ? profile.college.trim() : 'Cyber Defense Academy';
+
     // 3. Format file content according to PRD specification
     const fileContent = [
-      `Name: ${profile.name}`,
-      `Email: ${profile.email}`,
+      `Name: ${profile.name.trim()}`,
+      `Email: ${normalizedEmail}`,
       `PasswordHash: ${profile.passwordHash}`,
-      `Age: ${profile.age}`,
-      `Referred By: ${profile.referredBy}`,
-      `Studying: ${profile.studying}`,
-      `Academic Year: ${profile.academicYear}`,
-      `College: ${profile.college}`
+      `Age: ${ageVal}`,
+      `Referred By: ${referredByVal}`,
+      `Studying: ${studyingVal}`,
+      `Academic Year: ${academicYearVal}`,
+      `College: ${collegeVal}`
     ].join('\n') + '\n';
 
     // 4. Write profile file

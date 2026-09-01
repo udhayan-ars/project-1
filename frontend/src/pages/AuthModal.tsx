@@ -11,10 +11,14 @@ import {
   Calendar, 
   UserCheck, 
   RotateCw,
-  BookOpen
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSound } from '../context/SoundContext';
+import { apiRequest } from '../services/apiClient';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -35,7 +39,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   
-  // Registration 8-Field State
+  // Registration State: 3 Core Required Fields + 5 Optional Fields
   const [fullName, setFullName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -44,6 +48,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [studying, setStudying] = useState('');
   const [academicYear, setAcademicYear] = useState('1st Year');
   const [collegeName, setCollegeName] = useState('');
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isNetworkError, setIsNetworkError] = useState(false);
@@ -68,58 +73,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          identifier: trimmedIdent,
-          email: trimmedIdent,
-          username: trimmedIdent,
-          password: loginPassword
-        })
-      });
+    const result = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        identifier: trimmedIdent,
+        email: trimmedIdent,
+        username: trimmedIdent,
+        password: loginPassword
+      })
+    });
 
-      clearTimeout(timeoutId);
-
-      let data: any;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        setIsNetworkError(false);
-        setError('Received invalid response from Academy server. Please try again.');
-        playFailure();
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok) {
-        setIsNetworkError(false);
-        setError(data.error || '❌ Incorrect username or password.');
-        playFailure();
-        setLoading(false);
-        return;
-      }
-
-      playSuccess();
-      login(data.token, data.user);
-      onSuccess(data.user.mindset_completed === 0);
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      setIsNetworkError(true);
-      if (err.name === 'AbortError') {
-        setError("Request timed out. Can't reach the Academy server. Please try again.");
-      } else {
-        setError("Can't reach the Academy server. Check your connection and try again.");
-      }
+    if (!result.ok) {
+      setIsNetworkError(result.isNetworkError);
+      setError(result.error || '❌ Incorrect username or password.');
       playFailure();
-    } finally {
       setLoading(false);
+      return;
     }
+
+    playSuccess();
+    login(result.data.token, result.data.user);
+    onSuccess(result.data.user.mindset_completed === 0);
+    setLoading(false);
   };
 
   const handleRegisterSubmit = async (e?: React.FormEvent) => {
@@ -128,7 +105,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsNetworkError(false);
     playClick();
 
-    // 1. Validate Full Name
+    // 1. Validate Required: Full Name
     const trimmedFullName = fullName.trim();
     if (!trimmedFullName) {
       setError('⚠️ Please fill in your Full Name.');
@@ -136,7 +113,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // 2. Validate Email safely via JavaScript
+    // 2. Validate Required: Email
     const normalizedEmail = regEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
@@ -145,107 +122,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // 3. Validate Password (min 8 chars, at least 1 letter and 1 number)
+    // 3. Validate Required: Password (min 8 chars, at least 1 letter and 1 number)
     if (!regPassword || regPassword.length < 8 || !/[a-zA-Z]/.test(regPassword) || !/[0-9]/.test(regPassword)) {
       setError('❌ Password must contain at least 8 characters, including at least one letter and one number.');
       playFailure();
       return;
     }
 
-    // 4. Validate Age
-    const parsedAge = parseInt(age, 10);
-    if (isNaN(parsedAge) || parsedAge < 10 || parsedAge > 120) {
-      setError('❌ Age must be a valid positive number between 10 and 120.');
-      playFailure();
-      return;
+    // Build payload: omit empty optional fields so backend column defaults apply naturally
+    const payload: any = {
+      full_name: trimmedFullName,
+      email: normalizedEmail,
+      password: regPassword
+    };
+
+    // 4. Validate Optional Age if provided
+    if (age.trim()) {
+      const parsedAge = parseInt(age.trim(), 10);
+      if (isNaN(parsedAge) || parsedAge < 10 || parsedAge > 120) {
+        setError('❌ Age must be a valid positive number between 10 and 120.');
+        playFailure();
+        return;
+      }
+      payload.age = parsedAge;
     }
 
-    // 5. Validate other required fields
-    if (!referredBy.trim()) {
-      setError('⚠️ Who Referred You field is required.');
-      playFailure();
-      return;
-    }
-
-    if (!studying.trim()) {
-      setError('⚠️ What are you studying field is required.');
-      playFailure();
-      return;
-    }
-
-    if (!academicYear.trim()) {
-      setError('⚠️ Current Academic Year field is required.');
-      playFailure();
-      return;
-    }
-
-    if (!collegeName.trim()) {
-      setError('⚠️ College Name field is required.');
-      playFailure();
-      return;
-    }
+    if (referredBy.trim()) payload.referred_by = referredBy.trim();
+    if (studying.trim()) payload.studying = studying.trim();
+    if (showOptionalFields && academicYear.trim()) payload.academic_year = academicYear.trim();
+    if (collegeName.trim()) payload.college_name = collegeName.trim();
 
     setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          full_name: trimmedFullName,
-          email: normalizedEmail,
-          password: regPassword,
-          age: parsedAge,
-          referred_by: referredBy.trim(),
-          studying: studying.trim(),
-          academic_year: academicYear.trim(),
-          college_name: collegeName.trim()
-        })
-      });
+    const result = await apiRequest('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-      clearTimeout(timeoutId);
-
-      let data: any;
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        setIsNetworkError(false);
-        setError('Received invalid response from Academy server. Please try again.');
-        playFailure();
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok) {
-        setIsNetworkError(false);
-        if (res.status === 409 || (data.error && data.error.includes('already registered'))) {
-          setError('This email is already registered. Please login instead.');
-        } else {
-          setError(data.error || '❌ Registration failed. Please check your information and try again.');
-        }
-        playFailure();
-        setLoading(false);
-        return;
-      }
-
-      playSuccess();
-      login(data.token, data.user);
-      onSuccess(true);
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      setIsNetworkError(true);
-      if (err.name === 'AbortError') {
-        setError("Request timed out. Can't reach the Academy server. Please try again.");
+    if (!result.ok) {
+      setIsNetworkError(result.isNetworkError);
+      if (result.status === 409 || (result.error && result.error.includes('already registered'))) {
+        setError('This email is already registered. Please login instead.');
       } else {
-        setError("Can't reach the Academy server. Check your connection and try again.");
+        setError(result.error || '❌ Registration failed. Please check your information and try again.');
       }
       playFailure();
-    } finally {
       setLoading(false);
+      return;
     }
+
+    playSuccess();
+    login(result.data.token, result.data.user);
+    onSuccess(true);
+    setLoading(false);
   };
 
   const handleRetry = () => {
@@ -375,12 +305,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
         ) : (
           /* ========================================================================= */
-          /* REGISTRATION FORM (8 Required Fields)                                     */
+          /* REGISTRATION FORM (3 Required Core Fields + Collapsible Optional Fields)   */
           /* ========================================================================= */
           <form onSubmit={handleRegisterSubmit} noValidate className="space-y-4 font-mono text-xs">
             <div className="space-y-3">
               
-              {/* Row 1: Full Name & Email */}
+              {/* Row 1: Full Name & Email (Required) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 mb-1 font-bold">FULL NAME *</label>
@@ -411,105 +341,125 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              {/* Row 2: Password & Age */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">PASSWORD (MIN 8 CHARS) *</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="password"
-                      value={regPassword}
-                      onChange={e => setRegPassword(e.target.value)}
-                      placeholder="Min 8 chars, 1 letter, 1 number"
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">AGE *</label>
-                  <div className="relative">
-                    <Calendar className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="number"
-                      min={10}
-                      max={120}
-                      value={age}
-                      onChange={e => setAge(e.target.value)}
-                      placeholder="20"
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
-                    />
-                  </div>
+              {/* Row 2: Password (Required) */}
+              <div>
+                <label className="block text-slate-300 mb-1 font-bold">PASSWORD (MIN 8 CHARS) *</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    value={regPassword}
+                    onChange={e => setRegPassword(e.target.value)}
+                    placeholder="Min 8 chars, 1 letter, 1 number"
+                    className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
+                  />
                 </div>
               </div>
 
-              {/* Row 3: Who Referred You & What are you studying? */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">WHO REFERRED YOU *</label>
-                  <div className="relative">
-                    <UserCheck className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      value={referredBy}
-                      onChange={e => setReferredBy(e.target.value)}
-                      placeholder="Rahul / LinkedIn / Self"
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
-                    />
-                  </div>
-                </div>
+              {/* Collapsible Optional Fields Accordion */}
+              <div className="pt-2 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => { playClick(); setShowOptionalFields(prev => !prev); }}
+                  className="flex items-center justify-between w-full p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-cyan-300 transition-all font-mono text-xs font-semibold cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Tell us more (optional)</span>
+                  </span>
+                  {showOptionalFields ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                </button>
 
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">WHAT ARE YOU STUDYING? *</label>
-                  <div className="relative">
-                    <BookOpen className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      value={studying}
-                      onChange={e => setStudying(e.target.value)}
-                      placeholder="B.E Cyber Security / Computer Science"
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
+                {showOptionalFields && (
+                  <div className="mt-3 space-y-3 p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 animate-in fade-in duration-200">
+                    
+                    {/* Optional: Age & Who Referred You */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-bold text-[11px]">AGE (OPTIONAL)</label>
+                        <div className="relative">
+                          <Calendar className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                          <input
+                            type="number"
+                            min={10}
+                            max={120}
+                            value={age}
+                            onChange={e => setAge(e.target.value)}
+                            placeholder="20"
+                            className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
+                          />
+                        </div>
+                      </div>
 
-              {/* Row 4: Current Academic Year & College Name */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">CURRENT ACADEMIC YEAR *</label>
-                  <div className="relative">
-                    <GraduationCap className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <select
-                      value={academicYear}
-                      onChange={e => setAcademicYear(e.target.value)}
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white focus:outline-none"
-                    >
-                      <option value="1st Year">1st Year</option>
-                      <option value="2nd Year">2nd Year</option>
-                      <option value="3rd Year">3rd Year</option>
-                      <option value="Final Year / 4th Year">Final Year / 4th Year</option>
-                      <option value="Postgraduate / Masters">Postgraduate / Masters</option>
-                      <option value="Working Professional">Working Professional</option>
-                      <option value="High School Student">High School Student</option>
-                    </select>
-                  </div>
-                </div>
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-bold text-[11px]">WHO REFERRED YOU (OPTIONAL)</label>
+                        <div className="relative">
+                          <UserCheck className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={referredBy}
+                            onChange={e => setReferredBy(e.target.value)}
+                            placeholder="Rahul / LinkedIn / Self"
+                            className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">COLLEGE / INSTITUTION NAME *</label>
-                  <div className="relative">
-                    <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      value={collegeName}
-                      onChange={e => setCollegeName(e.target.value)}
-                      placeholder="ABC Engineering College"
-                      className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
-                    />
+                    {/* Optional: What are you studying & Academic Year */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-bold text-[11px]">WHAT ARE YOU STUDYING? (OPTIONAL)</label>
+                        <div className="relative">
+                          <BookOpen className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={studying}
+                            onChange={e => setStudying(e.target.value)}
+                            placeholder="B.E Cyber Security"
+                            className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-bold text-[11px]">CURRENT ACADEMIC YEAR (OPTIONAL)</label>
+                        <div className="relative">
+                          <GraduationCap className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                          <select
+                            value={academicYear}
+                            onChange={e => setAcademicYear(e.target.value)}
+                            className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white focus:outline-none"
+                          >
+                            <option value="1st Year">1st Year</option>
+                            <option value="2nd Year">2nd Year</option>
+                            <option value="3rd Year">3rd Year</option>
+                            <option value="Final Year / 4th Year">Final Year / 4th Year</option>
+                            <option value="Postgraduate / Masters">Postgraduate / Masters</option>
+                            <option value="Working Professional">Working Professional</option>
+                            <option value="High School Student">High School Student</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Optional: College Name */}
+                    <div>
+                      <label className="block text-slate-400 mb-1 font-bold text-[11px]">COLLEGE / INSTITUTION NAME (OPTIONAL)</label>
+                      <div className="relative">
+                        <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={collegeName}
+                          onChange={e => setCollegeName(e.target.value)}
+                          placeholder="ABC Engineering College"
+                          className="w-full bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-lg pl-9 pr-3 py-2 text-white placeholder:text-slate-600 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
                   </div>
-                </div>
+                )}
               </div>
             </div>
 

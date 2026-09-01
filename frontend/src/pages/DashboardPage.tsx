@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Award, AlertTriangle, ShieldCheck, Shield, Zap, TrendingUp, CheckCircle2, Clock, Map, FileText, ChevronRight, Sparkles } from 'lucide-react';
+import { Activity, Award, AlertTriangle, ShieldCheck, Shield, Zap, TrendingUp, CheckCircle2, Clock, Map, FileText, ChevronRight, Sparkles, UserCheck, X, GraduationCap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSound } from '../context/SoundContext';
 import { WeakTopic, Badge } from '../types';
@@ -18,6 +18,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToMap, o
   const [badges, setBadges] = useState<{ earned: Badge[]; all: Badge[] }>({ earned: [], all: [] });
   const [recentAttempts, setRecentAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isProfileBannerDismissed, setIsProfileBannerDismissed] = useState<boolean>(false);
+
+  // Check if optional profile fields are at default values
+  const hasDefaultProfile = Boolean(
+    user && (
+      user.college_name === 'Cyber Defense Academy' ||
+      !user.college_name ||
+      user.studying === 'Cyber Security' ||
+      !user.studying ||
+      user.referred_by === 'Direct'
+    )
+  );
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -89,6 +101,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigateToMap, o
           </button>
         </div>
       </div>
+
+      {/* Dismissible "Complete your profile" Prompt */}
+      {hasDefaultProfile && !isProfileBannerDismissed && (
+        <div className="mb-8 p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 flex items-start sm:items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-400/40 flex items-center justify-center shrink-0">
+              <GraduationCap className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-['Space_Grotesk'] text-sm font-bold text-white">Complete Your Cadet Profile</span>
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Optional</span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Add your College Name, Academic Year, and Field of Study to customize your verified training credentials and campus leaderboard standing.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => { playClick(); setIsProfileBannerDismissed(true); }}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

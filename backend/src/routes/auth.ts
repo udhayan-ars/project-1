@@ -49,7 +49,7 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
     college_name 
   } = req.body;
 
-  // 1. Strict Per-Field Input Validations
+  // 1. Required Fields Validation (Full Name, Email, Password)
   if (!full_name || typeof full_name !== 'string' || !full_name.trim()) {
     return res.status(400).json({ error: 'Full Name is required.' });
   }
@@ -62,31 +62,25 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
     return res.status(400).json({ error: 'Password must contain at least 8 characters, including at least one letter and one number.' });
   }
 
-  const parsedAge = parseInt(age, 10);
-  if (isNaN(parsedAge) || parsedAge < 10 || parsedAge > 120) {
-    return res.status(400).json({ error: 'Age must be a valid positive number between 10 and 120.' });
+  // 2. Optional Fields Validation (Validate if provided; if absent/blank, use column defaults)
+  let validatedAge = 20;
+  if (age !== undefined && age !== null && age !== '') {
+    const parsed = parseInt(String(age), 10);
+    if (isNaN(parsed) || parsed < 10 || parsed > 120) {
+      return res.status(400).json({ error: 'Age must be a valid positive number between 10 and 120.' });
+    }
+    validatedAge = parsed;
   }
 
-  if (!referred_by || typeof referred_by !== 'string' || !referred_by.trim()) {
-    return res.status(400).json({ error: 'Who Referred You field is required.' });
-  }
-
-  if (!studying || typeof studying !== 'string' || !studying.trim()) {
-    return res.status(400).json({ error: 'What are you studying field is required.' });
-  }
-
-  if (!academic_year || typeof academic_year !== 'string' || !academic_year.trim()) {
-    return res.status(400).json({ error: 'Current Academic Year field is required.' });
-  }
-
-  if (!college_name || typeof college_name !== 'string' || !college_name.trim()) {
-    return res.status(400).json({ error: 'College Name field is required.' });
-  }
+  const validatedReferredBy = (referred_by && typeof referred_by === 'string' && referred_by.trim()) ? referred_by.trim() : 'Direct';
+  const validatedStudying = (studying && typeof studying === 'string' && studying.trim()) ? studying.trim() : 'Cyber Security';
+  const validatedAcademicYear = (academic_year && typeof academic_year === 'string' && academic_year.trim()) ? academic_year.trim() : '3rd Year';
+  const validatedCollegeName = (college_name && typeof college_name === 'string' && college_name.trim()) ? college_name.trim() : 'Cyber Defense Academy';
 
   const normalizedEmail = email.trim().toLowerCase();
   const trimmedName = full_name.trim();
 
-  // 2. Case-insensitive Email Uniqueness Check (File Database & SQLite)
+  // 3. Case-insensitive Email Uniqueness Check (File Database & SQLite)
   const existingCadet = findCadetByEmail(normalizedEmail);
   const existingDbUser = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   
@@ -95,24 +89,24 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
   }
 
   try {
-    // 3. Hash Password with bcrypt
+    // 4. Hash Password with bcrypt
     const passwordHash = bcrypt.hashSync(password, 10);
 
-    // 4. Save Cadet Profile to File-Based Database in /database/<FullName>.txt and sync _email_index.txt
+    // 5. Save Cadet Profile to File-Based Database in /database/<FullName>.txt and sync _email_index.txt
     const cadetProfile: CadetProfile = {
       name: trimmedName,
       email: normalizedEmail,
       passwordHash,
-      age: parsedAge,
-      referredBy: referred_by.trim(),
-      studying: studying.trim(),
-      academicYear: academic_year.trim(),
-      college: college_name.trim()
+      age: validatedAge,
+      referredBy: validatedReferredBy,
+      studying: validatedStudying,
+      academicYear: validatedAcademicYear,
+      college: validatedCollegeName
     };
 
     const { filename } = await saveCadetProfile(cadetProfile);
 
-    // 5. Synchronize with SQLite database for level progression, XP and relational queries
+    // 6. Synchronize with SQLite database for level progression, XP and relational queries
     const userId = 'usr-' + Math.random().toString(36).substring(2, 9) + Date.now();
     const username = generateUniqueUsername(normalizedEmail);
 
@@ -129,11 +123,11 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
       username,
       normalizedEmail,
       passwordHash,
-      parsedAge,
-      referred_by.trim(),
-      studying.trim(),
-      academic_year.trim(),
-      college_name.trim(),
+      validatedAge,
+      validatedReferredBy,
+      validatedStudying,
+      validatedAcademicYear,
+      validatedCollegeName,
       filename
     );
 
@@ -145,7 +139,7 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
 
     logAudit(userId, 'CADET_REGISTERED', `file:${filename}`, req.ip, req.headers['user-agent']);
 
-    // 6. Issue JWT Session Token
+    // 7. Issue JWT Session Token
     const token = jwt.sign(
       { id: userId, username, email: normalizedEmail, role: 'student' },
       getJwtSecret(),
@@ -158,11 +152,11 @@ router.post('/register', authLimiter, async (req, res): Promise<any> => {
       username,
       email: normalizedEmail,
       role: 'student',
-      age: parsedAge,
-      referred_by: referred_by.trim(),
-      studying: studying.trim(),
-      academic_year: academic_year.trim(),
-      college_name: college_name.trim(),
+      age: validatedAge,
+      referred_by: validatedReferredBy,
+      studying: validatedStudying,
+      academic_year: validatedAcademicYear,
+      college_name: validatedCollegeName,
       profile_file: filename,
       xp: 0,
       current_level: 1,

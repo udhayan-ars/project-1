@@ -1,5 +1,5 @@
-import React from 'react';
-import { Shield, Sparkles, ArrowRight, HelpCircle, Eye, Compass, Lock } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Shield, Sparkles, ArrowRight, Compass, Check, ArrowDown } from 'lucide-react';
 import { useSound } from '../context/SoundContext';
 
 interface BeforeMindsetPageProps {
@@ -7,10 +7,46 @@ interface BeforeMindsetPageProps {
 }
 
 export const BeforeMindsetPage: React.FC<BeforeMindsetPageProps> = ({ onContinue }) => {
-  const { playClick } = useSound();
+  const { playClick, playSuccess } = useSound();
+  const [isChecked, setIsChecked] = useState(false);
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Check if content is scrollable or if user reached the bottom
+  const checkScrollPosition = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    // If the content fits entirely without scrolling (tolerance of 15px)
+    const isNotScrollable = el.scrollHeight <= el.clientHeight + 15;
+    if (isNotScrollable) {
+      setHasScrolledToBottom(true);
+      return;
+    }
+
+    // If user scrolled to (or within 25px of) the bottom
+    const isAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 25;
+    if (isAtBottom) {
+      setHasScrolledToBottom(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Initial check on mount and on window resize
+    checkScrollPosition();
+    window.addEventListener('resize', checkScrollPosition);
+    return () => window.removeEventListener('resize', checkScrollPosition);
+  }, [checkScrollPosition]);
+
+  const handleCheckboxToggle = () => {
+    if (!hasScrolledToBottom) return;
+    playClick();
+    setIsChecked(prev => !prev);
+  };
 
   const handleContinue = () => {
-    playClick();
+    if (!isChecked) return;
+    playSuccess();
     onContinue();
   };
 
@@ -37,9 +73,12 @@ export const BeforeMindsetPage: React.FC<BeforeMindsetPageProps> = ({ onContinue
           </h1>
         </div>
 
-        {/* Plain Language Explanation Paragraphs */}
-        <div className="space-y-4 font-sans text-sm sm:text-base text-slate-200 leading-relaxed">
-          
+        {/* Scrollable Plain Language Explanation Paragraphs */}
+        <div
+          ref={contentRef}
+          onScroll={checkScrollPosition}
+          className="space-y-4 font-sans text-sm sm:text-base text-slate-200 leading-relaxed max-h-[320px] sm:max-h-[360px] overflow-y-auto pr-2 custom-scrollbar border-y border-slate-800/80 py-4"
+        >
           <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
             <p className="font-semibold text-white">
               In a moment we’re going to ask you a strange question: <span className="text-cyan-400 font-bold">are you an idiot?</span>
@@ -74,16 +113,67 @@ export const BeforeMindsetPage: React.FC<BeforeMindsetPageProps> = ({ onContinue
           </div>
         </div>
 
+        {/* Scroll Indicator Prompt (Visible only if more content is available to scroll) */}
+        {!hasScrolledToBottom && (
+          <div className="flex items-center justify-center gap-1.5 text-cyan-400/80 font-mono text-xs animate-bounce">
+            <ArrowDown className="w-3.5 h-3.5" />
+            <span>Scroll down to read all guidelines</span>
+          </div>
+        )}
+
+        {/* Required Confirmation Checkbox */}
+        <div className="pt-1">
+          <label
+            onClick={handleCheckboxToggle}
+            className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all select-none ${
+              !hasScrolledToBottom
+                ? 'bg-slate-950/40 border-slate-800/60 text-slate-500 cursor-not-allowed opacity-60'
+                : isChecked
+                ? 'bg-cyan-950/40 border-cyan-500/60 text-cyan-200 cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.15)]'
+                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 cursor-pointer'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                !hasScrolledToBottom
+                  ? 'border-slate-700 bg-slate-900 text-transparent'
+                  : isChecked
+                  ? 'border-cyan-400 bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(0,243,255,0.5)]'
+                  : 'border-slate-600 bg-slate-900 text-transparent hover:border-cyan-400'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+            </div>
+
+            <div className="space-y-0.5">
+              <span className="text-xs sm:text-sm font-semibold tracking-wide block">
+                I have read and understood the above.
+              </span>
+              {!hasScrolledToBottom && (
+                <span className="text-[11px] font-mono text-slate-500 block">
+                  (Scroll through all guidelines above to unlock confirmation)
+                </span>
+              )}
+            </div>
+          </label>
+        </div>
+
         {/* Continue Action Button */}
-        <div className="pt-2">
+        <div>
           <button
             onClick={handleContinue}
-            className="cyber-btn-primary w-full py-3.5 px-8 text-sm uppercase tracking-wider font-mono font-bold flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(0,243,255,0.4)]"
+            disabled={!isChecked}
+            className={`w-full py-3.5 px-8 text-sm uppercase tracking-wider font-mono font-bold flex items-center justify-center gap-2 rounded-xl transition-all duration-300 ${
+              isChecked
+                ? 'cyber-btn-primary shadow-[0_0_25px_rgba(0,243,255,0.4)] cursor-pointer'
+                : 'bg-slate-900/80 border border-slate-800 text-slate-600 cursor-not-allowed opacity-50 shadow-none'
+            }`}
           >
             <span>Continue</span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className={`w-4 h-4 transition-transform ${isChecked ? 'group-hover:translate-x-1' : ''}`} />
           </button>
         </div>
+
       </div>
     </div>
   );

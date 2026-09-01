@@ -13,7 +13,19 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: backendTarget,
-          changeOrigin: true
+          changeOrigin: true,
+          configure: (proxy, _options) => {
+            proxy.on('error', (err, _req, res) => {
+              if (res && 'writeHead' in res && !res.headersSent) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  error: "Can't reach the Academy server. Please verify the backend is running.",
+                  code: (err as any).code || 'ECONNREFUSED',
+                  is_proxy_error: true
+                }));
+              }
+            });
+          }
         }
       }
     }
